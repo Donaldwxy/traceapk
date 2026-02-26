@@ -1,15 +1,52 @@
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
+import 'l10n/app_localizations.dart';
+import 'package:flutter/services.dart';
 
 void main() async {
-  // Ensure that Flutter bindings are initialized.
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize the database helper.
   await DatabaseHelper.instance.database;
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => LocaleProvider(),
+      child: const MyApp(),
+    ),
+  );
+}
+
+class LocaleProvider with ChangeNotifier {
+  Locale _locale = const Locale('en');
+  final String _prefKey = 'language_code';
+
+  Locale get locale => _locale;
+
+  LocaleProvider() {
+    _loadLocale();
+  }
+
+  void _loadLocale() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? languageCode = prefs.getString(_prefKey);
+    if (languageCode != null) {
+      _locale = Locale(languageCode);
+      notifyListeners();
+    }
+  }
+
+  void setLocale(Locale locale) async {
+    _locale = locale;
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKey, locale.languageCode);
+    notifyListeners();
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -17,14 +54,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Location Tracker',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-        textTheme: GoogleFonts.latoTextTheme(Theme.of(context).textTheme),
-      ),
-      home: const MyHomePage(),
+    return Consumer<LocaleProvider>(
+      builder: (context, provider, child) {
+        return MaterialApp(
+          locale: provider.locale,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            // Add other delegates here if needed
+          ],
+          supportedLocales: const [
+            Locale('en', ''),
+            Locale('zh', ''),
+          ],
+          title: 'Location Tracker',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            useMaterial3: true,
+            textTheme: GoogleFonts.latoTextTheme(),
+          ),
+          home: const MyHomePage(),
+        );
+      },
     );
   }
 }
@@ -38,63 +88,89 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _isLoading = false;
-  String _statusMessage = 'Press the refresh button to get your location.';
+  String _statusMessage = '...'; // Placeholder
   List<LocationRecord> _recentRecords = [];
+  Timer? _inactivityTimer;
 
   @override
   void initState() {
     super.initState();
-    // Automatically fetch data and load history on startup.
-    _loadInitialData();
+    _inactivityTimer = Timer(const Duration(seconds: 10), () {
+      SystemNavigator.pop();
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Set initial status message and load data after the first frame.
+      setState(() {
+        _statusMessage = AppLocalizations.of(context)!.translate('Press the refresh button to get your location.');
+      });
+      _loadInitialData();
+    });
+  }
+
+  // This function is called on the first user interaction to disable the inactivity timer.
+  void _handleUserInteraction() {
+    if (_inactivityTimer?.isActive ?? false) {
+      _inactivityTimer!.cancel();
+    }
+  }
+
+  @override
+  void dispose() {
+    _inactivityTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadInitialData() async {
-    await _refreshData();
+    await _refreshData(isManual: false);
   }
 
-  Future<void> _refreshData() async {
-    if (_isLoading) return; // Prevent simultaneous refreshes
+  Future<void> _refreshData({bool isManual = true}) async {
+    if (isManual) {
+      _handleUserInteraction();
+    }
+    if (_isLoading) return;
+
+    final loc = AppLocalizations.of(context)!;
+    final gettingLocationText = loc.translate('Getting your current location...');
+    final successText = loc.translate('Successfully recorded your location!');
 
     setState(() {
       _isLoading = true;
-      _statusMessage = 'Getting your current location...';
+      _statusMessage = gettingLocationText;
     });
 
     try {
-      // 1. Check permissions and services
       await _checkPermissions();
-
-      // 2. Get current position
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
-
-      // 3. Create a new record
       final newRecord = LocationRecord(
         timestamp: DateTime.now().toIso8601String(),
         latitude: position.latitude,
         longitude: position.longitude,
       );
-
-      // 4. Save the new record to the database
       await DatabaseHelper.instance.create(newRecord);
-      _statusMessage = 'Successfully recorded your location!';
+      _statusMessage = successText;
     } catch (e) {
       _statusMessage = 'Error: ${e.toString()}';
     } finally {
-      // 5. Load the updated history and finish loading state
-      await _loadHistory();
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        await _loadHistory();
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _loadHistory() async {
     final records = await DatabaseHelper.instance.getRecentRecords(limit: 10);
-    setState(() {
-      _recentRecords = records;
-    });
+    if (mounted) {
+      setState(() {
+        _recentRecords = records;
+      });
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -117,6 +193,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _showRecordsByDate() async {
+    _handleUserInteraction();
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -124,132 +201,193 @@ class _MyHomePageState extends State<MyHomePage> {
       lastDate: DateTime.now(),
     );
 
-    if (picked != null) {
-      final records = await DatabaseHelper.instance.getRecordsByDate(picked);
-      // ignore: use_build_context_synchronously
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Records for ${DateFormat.yMMMd().format(picked)}'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: records.isEmpty
-                ? const Text('No records found for this date.')
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: records.length,
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      return ListTile(
-                        title: Text(
-                          DateFormat.jm().format(
-                            DateTime.parse(record.timestamp),
-                          ),
+    if (picked == null) return;
+
+    final records = await DatabaseHelper.instance.getRecordsByDate(picked);
+    
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${AppLocalizations.of(context)!.translate('Records for')} ${DateFormat.yMMMd().format(picked)}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: records.isEmpty
+              ? Text(AppLocalizations.of(context)!.translate('No records found for this date.'))
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: records.length,
+                  itemBuilder: (context, index) {
+                    final record = records[index];
+                    return ListTile(
+                      title: Text(
+                        DateFormat.jm().format(
+                          DateTime.parse(record.timestamp),
                         ),
-                        subtitle: Text(
-                          'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Close'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+                      ),
+                      subtitle: Text(
+                        'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
+                      ),
+                      onTap: () => _openMap(record.latitude, record.longitude),
+                    );
+                  },
+                ),
         ),
-      );
+        actions: [
+          TextButton(
+            child: Text(AppLocalizations.of(context)!.translate('Close')),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openMap(double latitude, double longitude) async {
+    _handleUserInteraction();
+    final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+    if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
+      await launchUrl(Uri.parse(googleMapsUrl));
+    } else {
+      throw 'Could not launch $googleMapsUrl';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Location History'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_today),
-            tooltip: 'Search by date',
-            onPressed: _showRecordsByDate,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Top status bar
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isLoading)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 3),
-                  ),
-                if (_isLoading) const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _statusMessage,
-                    style: Theme.of(context).textTheme.titleSmall,
-                    textAlign: _isLoading ? TextAlign.start : TextAlign.center,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // List of recent records
-          Expanded(
-            child: _recentRecords.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No records yet. Press the refresh button to start!',
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _recentRecords.length,
-                    itemBuilder: (context, index) {
-                      final record = _recentRecords[index];
-                      final parsedDate = DateTime.parse(record.timestamp);
+    final localeProvider = Provider.of<LocaleProvider>(context);
+    final timeZoneName = DateTime.now().timeZoneName;
 
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text((index + 1).toString()),
-                          ),
-                          title: Text(
-                            DateFormat(
-                              'MMM d, yyyy - hh:mm:ss a',
-                            ).format(parsedDate),
-                          ),
-                          subtitle: Text(
-                            'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+    return GestureDetector(
+      onTap: _handleUserInteraction,
+      onPanDown: (_) => _handleUserInteraction(),
+      onScaleStart: (_) => _handleUserInteraction(),
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(AppLocalizations.of(context)!.translate('Location History')),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.calendar_today),
+              tooltip: AppLocalizations.of(context)!.translate('Search by date'),
+              onPressed: _showRecordsByDate,
+            ),
+          ],
+        ),
+        drawer: Drawer(
+          child: ListView(
+            children: [
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                child: Text(
+                  AppLocalizations.of(context)!.translate('Language'),
+                  style: Theme.of(context).primaryTextTheme.titleLarge,
+                ),
+              ),
+              ListTile(
+                title: Text(AppLocalizations.of(context)!.translate('English')),
+                onTap: () {
+                  _handleUserInteraction();
+                  localeProvider.setLocale(const Locale('en'));
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                title: Text(AppLocalizations.of(context)!.translate('Chinese')),
+                onTap: () {
+                  _handleUserInteraction();
+                  localeProvider.setLocale(const Locale('zh'));
+                  Navigator.pop(context);
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _refreshData,
-        tooltip: 'Record Current Location',
-        child: _isLoading
-            ? const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              )
-            : const Icon(Icons.my_location),
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (_isLoading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  if (_isLoading) const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _statusMessage,
+                      style: Theme.of(context).textTheme.titleSmall,
+                      textAlign: _isLoading ? TextAlign.start : TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _recentRecords.isEmpty
+                  ? Center(
+                      child: Text(
+                        AppLocalizations.of(context)!.translate('No records yet. Press the refresh button to start!'),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _recentRecords.length,
+                      itemBuilder: (context, index) {
+                        final record = _recentRecords[index];
+                        final parsedDate = DateTime.parse(record.timestamp);
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Text((index + 1).toString()),
+                            ),
+                            title: Text(
+                              DateFormat(
+                                'MMM d, yyyy - hh:mm:ss a',
+                              ).format(parsedDate),
+                            ),
+                            subtitle: Text(
+                              'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            onTap: () => _openMap(record.latitude, record.longitude),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(8.0),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Center(
+                child: Text(
+                  'Timezone: $timeZoneName',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _refreshData(isManual: true),
+          tooltip: AppLocalizations.of(context)!.translate('Record Current Location'),
+          child: _isLoading
+              ? const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                )
+              : const Icon(Icons.my_location),
+        ),
       ),
     );
   }
