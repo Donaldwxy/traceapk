@@ -2,7 +2,7 @@ name: myapp
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.18+18
+version: 1.0.19+19
 
 environment:
   sdk: ^3.9.0
@@ -21,6 +21,7 @@ dependencies:
   shared_preferences: ^2.5.4
   url_launcher: ^6.3.2
   path: ^1.9.1
+  android_intent_plus: ^6.0.0
 
 dev_dependencies:
   flutter_test:
