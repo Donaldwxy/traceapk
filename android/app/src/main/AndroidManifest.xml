@@ -18,10 +18,10 @@
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="*/*" />
         </intent>
-        <!-- For Gaode Maps (Amap) -->
+        <!-- For Gaode Maps (Amap) - Use the correct scheme for native Android -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="amapuri" />
+            <data android:scheme="androidamap" />
         </intent>
     </queries>
 
