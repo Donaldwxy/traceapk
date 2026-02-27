@@ -244,10 +244,6 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     Uri uri;
 
     if (_isMainlandChina) {
-      // CORRECT: Use androidamap:// for native Android invocation.
-      // CORRECT: Use marker interface for better compatibility.
-      // CORRECT: Set dev=1 to tell Amap to correct the WGS-84 coordinates.
-      // CORRECT: Name parameter is URL encoded.
       final String urlString = 'androidamap://marker?sourceApplication=location_tracker&lat=$latitude&lon=$longitude&name=$encodedName&dev=1';
       uri = Uri.parse(urlString);
     } else {
@@ -256,7 +252,8 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     }
 
     try {
-      await launchUrl(uri);
+      // The key change is here: forcing external application launch mode.
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
