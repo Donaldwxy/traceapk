@@ -19,7 +19,7 @@ This is a Flutter application that allows users to record their location (latitu
 
 ## Version
 
-1.0.2
+**1.0.2**
 
 ## Current Plan
 
