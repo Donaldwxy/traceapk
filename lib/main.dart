@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'package:coord_convert/coord_convert.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
 import 'l10n/app_localizations.dart';
-import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -90,15 +90,10 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isLoading = false;
   String _statusMessage = '...'; // Placeholder
   List<LocationRecord> _recentRecords = [];
-  Timer? _inactivityTimer;
 
   @override
   void initState() {
     super.initState();
-    _inactivityTimer = Timer(const Duration(seconds: 10), () {
-      SystemNavigator.pop();
-    });
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Set initial status message and load data after the first frame.
       setState(() {
@@ -108,27 +103,11 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  // This function is called on the first user interaction to disable the inactivity timer.
-  void _handleUserInteraction() {
-    if (_inactivityTimer?.isActive ?? false) {
-      _inactivityTimer!.cancel();
-    }
-  }
-
-  @override
-  void dispose() {
-    _inactivityTimer?.cancel();
-    super.dispose();
-  }
-
   Future<void> _loadInitialData() async {
     await _refreshData(isManual: false);
   }
 
   Future<void> _refreshData({bool isManual = true}) async {
-    if (isManual) {
-      _handleUserInteraction();
-    }
     if (_isLoading) return;
 
     final loc = AppLocalizations.of(context)!;
@@ -193,7 +172,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _showRecordsByDate() async {
-    _handleUserInteraction();
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -245,8 +223,11 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _openMap(double latitude, double longitude) async {
-    _handleUserInteraction();
-    final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+    // Convert WGS84 to GCJ-02
+    final wgs84Coord = Coord(lat: latitude, lon: longitude);
+    final gcj02Coord = CoordConvert.convert(wgs84Coord, Coords.wgs84, Coords.gcj02);
+
+    final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${gcj02Coord.lat},${gcj02Coord.lon}';
     if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
       await launchUrl(Uri.parse(googleMapsUrl));
     } else {
@@ -259,135 +240,114 @@ class _MyHomePageState extends State<MyHomePage> {
     final localeProvider = Provider.of<LocaleProvider>(context);
     final timeZoneName = DateTime.now().timeZoneName;
 
-    return GestureDetector(
-      onTap: _handleUserInteraction,
-      onPanDown: (_) => _handleUserInteraction(),
-      onScaleStart: (_) => _handleUserInteraction(),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(AppLocalizations.of(context)!.translate('Location History')),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.calendar_today),
-              tooltip: AppLocalizations.of(context)!.translate('Search by date'),
-              onPressed: _showRecordsByDate,
-            ),
-          ],
-        ),
-        drawer: Drawer(
-          child: ListView(
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                child: Text(
-                  AppLocalizations.of(context)!.translate('Language'),
-                  style: Theme.of(context).primaryTextTheme.titleLarge,
-                ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(AppLocalizations.of(context)!.translate('Location History')),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today),
+            tooltip: AppLocalizations.of(context)!.translate('Search by date'),
+            onPressed: _showRecordsByDate,
+          ),
+          PopupMenuButton<Locale>(
+            onSelected: (Locale locale) {
+              localeProvider.setLocale(locale);
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<Locale>>[
+              const PopupMenuItem<Locale>(
+                value: Locale('en'),
+                child: Text('English'),
               ),
-              ListTile(
-                title: Text(AppLocalizations.of(context)!.translate('English')),
-                onTap: () {
-                  _handleUserInteraction();
-                  localeProvider.setLocale(const Locale('en'));
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                title: Text(AppLocalizations.of(context)!.translate('Chinese')),
-                onTap: () {
-                  _handleUserInteraction();
-                  localeProvider.setLocale(const Locale('zh'));
-                  Navigator.pop(context);
-                },
+              const PopupMenuItem<Locale>(
+                value: Locale('zh'),
+                child: Text('中文'),
               ),
             ],
           ),
-        ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (_isLoading)
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 3),
-                    ),
-                  if (_isLoading) const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _statusMessage,
-                      style: Theme.of(context).textTheme.titleSmall,
-                      textAlign: _isLoading ? TextAlign.start : TextAlign.center,
-                    ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isLoading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 3),
                   ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: _recentRecords.isEmpty
-                  ? Center(
-                      child: Text(
-                        AppLocalizations.of(context)!.translate('No records yet. Press the refresh button to start!'),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _recentRecords.length,
-                      itemBuilder: (context, index) {
-                        final record = _recentRecords[index];
-                        final parsedDate = DateTime.parse(record.timestamp);
-
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              child: Text((index + 1).toString()),
-                            ),
-                            title: Text(
-                              DateFormat(
-                                'MMM d, yyyy - hh:mm:ss a',
-                              ).format(parsedDate),
-                            ),
-                            subtitle: Text(
-                              'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            onTap: () => _openMap(record.latitude, record.longitude),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(8.0),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: Center(
-                child: Text(
-                  'Timezone: $timeZoneName',
-                  style: Theme.of(context).textTheme.bodySmall,
+                if (_isLoading) const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _statusMessage,
+                    style: Theme.of(context).textTheme.titleSmall,
+                    textAlign: _isLoading ? TextAlign.start : TextAlign.center,
+                  ),
                 ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _recentRecords.isEmpty
+                ? Center(
+                    child: Text(
+                      AppLocalizations.of(context)!.translate('No records yet. Press the refresh button to start!'),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _recentRecords.length,
+                    itemBuilder: (context, index) {
+                      final record = _recentRecords[index];
+                      final parsedDate = DateTime.parse(record.timestamp);
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            child: Text((index + 1).toString()),
+                          ),
+                          title: Text(
+                            DateFormat(
+                              'MMM d, yyyy - hh:mm:ss a',
+                            ).format(parsedDate),
+                          ),
+                          subtitle: Text(
+                            'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          onTap: () => _openMap(record.latitude, record.longitude),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(8.0),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Center(
+              child: Text(
+                'Timezone: $timeZoneName',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _refreshData(isManual: true),
-          tooltip: AppLocalizations.of(context)!.translate('Record Current Location'),
-          child: _isLoading
-              ? const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                )
-              : const Icon(Icons.my_location),
-        ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _refreshData(isManual: true),
+        tooltip: AppLocalizations.of(context)!.translate('Record Current Location'),
+        child: _isLoading
+            ? const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              )
+            : const Icon(Icons.my_location),
       ),
     );
   }
