@@ -240,16 +240,30 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   void _openMap(double latitude, double longitude) async {
     String url;
+    final loc = AppLocalizations.of(context)!;
+    final poiname = loc.translate('Recorded Location');
+
     if (_isMainlandChina) {
-      url = 'androidamap://viewMap?sourceApplication=amap&lat=$latitude&lon=$longitude&dev=0';
+      // Corrected Gaode Maps (Amap) URL Scheme
+      // Use amapuri:// for broader compatibility
+      // Use dev=1 to indicate WGS-84 coordinates, which is what Geolocator provides
+      url = 'amapuri://viewMap?sourceApplication=location_tracker&poiname=$poiname&lat=$latitude&lon=$longitude&dev=1';
     } else {
       url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
     }
 
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
     } else {
-      throw 'Could not launch $url';
+      // Provide more helpful feedback to the user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(loc.translate('Could not open map application. Please ensure it is installed.')),
+          ),
+        );
+      }
     }
   }
 
