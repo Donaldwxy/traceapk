@@ -29,6 +29,8 @@ class AppLocalizations {
       'Records for': 'Records for',
       'No records found for this date.': 'No records found for this date.',
       'Close': 'Close',
+      'Could not open map application. Please ensure it is installed.': 'Could not open map application. Please ensure it is installed.',
+      'Recorded Location': 'Recorded Location',
     },
     'zh': {
       'Location History': '位置记录',
@@ -44,6 +46,8 @@ class AppLocalizations {
       'Records for': '的记录',
       'No records found for this date.': '未找到该日期的记录。',
       'Close': '关闭',
+      'Could not open map application. Please ensure it is installed.': '无法打开地图应用，请确保已经安装。',
+      'Recorded Location': '记录的位置',
     },
   };
 
