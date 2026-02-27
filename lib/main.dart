@@ -224,8 +224,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _openMap(double latitude, double longitude) async {
     // Convert WGS84 to GCJ-02
-    final wgs84Coord = Coord(lat: latitude, lon: longitude);
-    final gcj02Coord = CoordConvert.convert(wgs84Coord, Coords.wgs84, Coords.gcj02);
+    Coord wgs84Coord = Coord(lat: latitude, lon: longitude);
+    Coord gcj02Coord = coordsConvert.wgs84_to_gcj02(wgs84Coord);
 
     final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${gcj02Coord.lat},${gcj02Coord.lon}';
     if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
