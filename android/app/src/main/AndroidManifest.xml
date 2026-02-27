@@ -1,24 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
-    <!-- Add this block to declare intents to query other apps -->
+    <!-- 
+      This <queries> block is essential for apps targeting Android 11 (API 30) or higher.
+      It declares the app's intent to interact with other specific apps (package visibility).
+      Without this, calls to launchUrl might fail silently because the app isn't allowed 
+      to see if the target app (like a map application) is installed.
+    -->
     <queries>
-        <!-- If your app opens https URLs -->
+        <!-- Intent to launch web URLs (for Google Maps on web) -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
-        <!-- If your app makes calls -->
-        <intent>
-            <action android:name="android.intent.action.DIAL" />
-            <data android:scheme="tel" />
-        </intent>
-        <!-- If your app emails -->
-        <intent>
-            <action android:name="android.intent.action.SEND" />
-            <data android:mimeType="*/*" />
-        </intent>
-        <!-- For Gaode Maps (Amap) - Use the correct scheme for native Android -->
+        
+        <!-- Intent to launch Gaode Maps (Amap) using its native Android URL scheme -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="androidamap" />

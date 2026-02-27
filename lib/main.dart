@@ -239,17 +239,22 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   }
 
   void _openMap(double latitude, double longitude) async {
-    String url;
     final loc = AppLocalizations.of(context)!;
-    final name = Uri.encodeComponent(loc.translate('Recorded Location'));
+    final String encodedName = Uri.encodeComponent(loc.translate('Recorded Location'));
+    Uri uri;
 
     if (_isMainlandChina) {
-      url = 'androidamap://marker?sourceApplication=location_tracker&lat=$latitude&lon=$longitude&name=$name&dev=1';
+      // CORRECT: Use androidamap:// for native Android invocation.
+      // CORRECT: Use marker interface for better compatibility.
+      // CORRECT: Set dev=1 to tell Amap to correct the WGS-84 coordinates.
+      // CORRECT: Name parameter is URL encoded.
+      final String urlString = 'androidamap://marker?sourceApplication=location_tracker&lat=$latitude&lon=$longitude&name=$encodedName&dev=1';
+      uri = Uri.parse(urlString);
     } else {
-      url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+      final String urlString = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+      uri = Uri.parse(urlString);
     }
 
-    final uri = Uri.parse(url);
     try {
       await launchUrl(uri);
     } catch (e) {
