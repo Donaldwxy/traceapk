@@ -43,7 +43,6 @@ dependencies:
   shared_preferences: ^2.5.4
   url_launcher: ^6.3.2
   path: ^1.9.1
-  coord_convert: ^1.0.0
 
 dev_dependencies:
   flutter_test:

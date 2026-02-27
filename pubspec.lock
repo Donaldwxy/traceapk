@@ -49,14 +49,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
-  coord_convert:
-    dependency: "direct main"
-    description:
-      name: coord_convert
-      sha256: "8431b91ae3509d152c30d2ac038e371c984624e122a5ebb10e0ec6f19866032c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
   crypto:
     dependency: transitive
     description:

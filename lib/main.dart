@@ -1,10 +1,10 @@
 
 import 'dart:async';
-import 'package:coord_convert/coord_convert.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,6 +13,7 @@ import 'l10n/app_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting();
   await DatabaseHelper.instance.database;
   runApp(
     ChangeNotifierProvider(
@@ -86,14 +87,16 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   bool _isLoading = false;
   String _statusMessage = '...'; // Placeholder
   List<LocationRecord> _recentRecords = [];
+  bool _isMainlandChina = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Set initial status message and load data after the first frame.
       setState(() {
@@ -101,6 +104,19 @@ class _MyHomePageState extends State<MyHomePage> {
       });
       _loadInitialData();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshData(isManual: false);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -223,16 +239,26 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _openMap(double latitude, double longitude) async {
-    // Convert WGS84 to GCJ-02
-    Coord wgs84Coord = Coord(lat: latitude, lon: longitude);
-    Coord gcj02Coord = coordsConvert.wgs84_to_gcj02(wgs84Coord);
-
-    final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${gcj02Coord.lat},${gcj02Coord.lon}';
-    if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
-      await launchUrl(Uri.parse(googleMapsUrl));
+    String url;
+    if (_isMainlandChina) {
+      url = 'androidamap://viewMap?sourceApplication=amap&lat=$latitude&lon=$longitude&dev=0';
     } else {
-      throw 'Could not launch $googleMapsUrl';
+      url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
     }
+
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+    } else {
+      throw 'Could not launch $url';
+    }
+  }
+
+  void _toggleRegion() {
+    setState(() {
+      _isMainlandChina = !_isMainlandChina;
+      final locale = _isMainlandChina ? const Locale('zh') : const Locale('en');
+      Provider.of<LocaleProvider>(context, listen: false).setLocale(locale);
+    });
   }
 
   @override
@@ -249,20 +275,10 @@ class _MyHomePageState extends State<MyHomePage> {
             tooltip: AppLocalizations.of(context)!.translate('Search by date'),
             onPressed: _showRecordsByDate,
           ),
-          PopupMenuButton<Locale>(
-            onSelected: (Locale locale) {
-              localeProvider.setLocale(locale);
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<Locale>>[
-              const PopupMenuItem<Locale>(
-                value: Locale('en'),
-                child: Text('English'),
-              ),
-              const PopupMenuItem<Locale>(
-                value: Locale('zh'),
-                child: Text('中文'),
-              ),
-            ],
+          IconButton(
+            icon: Icon(_isMainlandChina ? Icons.public_off : Icons.public),
+            tooltip: _isMainlandChina ? '切换到海外' : 'Switch to Mainland China',
+            onPressed: _toggleRegion,
           ),
         ],
       ),
@@ -315,11 +331,12 @@ class _MyHomePageState extends State<MyHomePage> {
                           ),
                           title: Text(
                             DateFormat(
-                              'MMM d, yyyy - hh:mm:ss a',
+                              _isMainlandChina ? 'yyyy年M月d日 HH:mm:ss' : 'MMM d, yyyy - hh:mm:ss a',
+                              localeProvider.locale.toString(),
                             ).format(parsedDate),
                           ),
                           subtitle: Text(
-                            'Lat: ${record.latitude.toStringAsFixed(4)}, Lon: ${record.longitude.toStringAsFixed(4)}',
+                            '${_isMainlandChina ? '纬度' : 'Lat'}: ${record.latitude.toStringAsFixed(4)}, ${_isMainlandChina ? '经度' : 'Lon'}: ${record.longitude.toStringAsFixed(4)}',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           onTap: () => _openMap(record.latitude, record.longitude),
@@ -333,7 +350,7 @@ class _MyHomePageState extends State<MyHomePage> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Center(
               child: Text(
-                'Timezone: $timeZoneName',
+                '${_isMainlandChina ? '时区' : 'Timezone'}: $timeZoneName',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
