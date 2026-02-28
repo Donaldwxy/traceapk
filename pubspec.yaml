@@ -2,7 +2,7 @@ name: myapp
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.26+26
+version: 1.0.27+27
 
 environment:
   sdk: ^3.9.0
@@ -25,6 +25,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_blue_plus: ^2.2.1
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:
